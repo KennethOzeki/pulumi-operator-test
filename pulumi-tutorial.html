@@ -1,0 +1,665 @@
+<p>
+terraformやAnsible、AWS CloudFormationなど、クラウドリソースオーケストレーションツール（または構成管理ツール）の類似ツールとなる <a href="https://www.pulumi.com/">Pulumi</a> について、公式ドキュメントのチュートリアルを実施してみましたので、こちらにまとめます。
+</p>
+
+<h2>目次</h2>
+
+<div id="tableOfContent" style="color: #333333;background: #F7F7F7;list-style-type: none;font-weight: bold;border: solid 3px #CCCCCC;padding: 0.5em 1em;margin: 0 0 40px">
+    <ul style="margin-bottom: 0">
+        <li><a href="#01">Pulumiとは</a>
+        <ul style="margin-bottom: 0">
+            <li><a href="#01-01">Pulumiの概要</a></li>
+            <li><a href="#01-02">Pulumiの主な構成</a></li>
+            <li><a href="#01-03">Pulumiの料金</a></li>
+        </ul>
+        </li>
+        <li><a href="#02">実際に触ってみた</a>
+        <ul style="margin-bottom: 0">
+            <li><a href="#02-01">前提</a></li>
+            <li><a href="#02-02">前準備</a></li>
+            <li><a href="#02-03">手順</a>
+            <ul style="margin-bottom: 0">
+                <li><a href="#02-03-01">Pulumi Project 新規作成</a></li>
+                <li><a href="#02-03-02">Program 新規作成</a></li>
+                <li><a href="#02-03-03">Stack デプロイ</a></li>
+                <li><a href="#02-03-04">Program 編集</a></li>
+                <li><a href="#02-03-05">Program 変更 デプロイ</a></li>
+                <li><a href="#02-03-06">Stack resource 削除</a></li>
+                <li><a href="#02-03-07">Stack 削除</a></li>
+            </ul>
+            </li>
+        </ul>
+        </li>
+        <li><a href="#03">まとめ</a></li>
+    </ul>
+</div>
+
+<h2 id="01">Pulumiとは</h2>
+
+<h3 id="01-01">Pulumiの概要 (<a href="https://www.pulumi.com/">参考</a>)</h3>
+
+<blockquote>Build, deploy, and manage modern cloud applications and infrastructure using familiar languages, tools, and engineering practices.
+引用：<a href="https://www.pulumi.com/">Pulumi公式HP</a>より</blockquote>
+
+<p>
+infrastructure as code プラットフォームのPulumiは普段開発エンジニアやインフラエンジニアが慣れ親しんでいる開発言語(Go/C#/Python/TypeScriptなど)やマークアップ言語(YAMLなど)で数多くのクラウドインフラリソースやクラウドアプリケーションをビルド/デプロイすることが可能となり、リソースの最終的なあるべき姿(冪等性)を好きな言語で表現することができます。仮にインフラリソースの管理でTerraformを利用するとなった場合はHCL(HashiCorp Configuration Language)について１から学習したり、Ansibleの場合はPlaybookなどの仕組みを理解したりと、それぞれのツールである程度の学習コストがかかるところを、Pulumiの場合は各々の開発言語が普段パッケージを扱うようにPulumiを利用できるため、学習コストが少なくて済み、かつプログラマブルな処理(ループの記載/特定インフラの関数化 etc…)が組みやすくなっています。またPulumiはGCP/AWS/Microsoft Azureなどのマルチクラウド管理や、kubernetesのdeployも対応しています。その他PulumiのGUIコンソール画面からソースコードのビルド、テスト、デプロイまでの一通りのパイプライン制御や、auditログの確認、RBAC制御やサポート(有償)などのサービスも利用可能です。 <a href="https://www.pulumi.com/case-studies/">Pulumiを導入した企業の一部</a>として、Atlassian、SANS、Skai、Mercedes-Benzなどが紹介されていて、GartnerよりPulumiが「<a href="https://info.pulumi.com/press-release/gartner-cool-vendor-5_28_2020?_gl=1*awrs5e*_ga*MTMxMTExMjEzNy4xNjYwNzI4NDUw*_ga_FQHG5CVY2D*MTY2MDcyODQ0OS4xLjEuMTY2MDcyOTI0My42MC4wLjA.">Cool Vendor in the May 2020 Gartner Cool Vendors in Agile and DevOps</a>」として認識されるなど、ここ数年で海外での注目度も上がっています。
+</p>
+
+<h3 id="01-02">Pulumiの主な構成 (<a href="https://www.pulumi.com/docs/intro/concepts/">参考</a>)</h3>
+
+<p>Pulumiの主な構成は以下になります(公式HPより引用)</p>
+
+<p><img src="/wp-content/uploads/2022/08/1_pulumi-concept-360x260.png" alt="1_pulumi-concept" width="360" height="260" class="aligncenter size-medium wp-image-53963" /></p>
+
+<p>
+簡単にまとめると以下になります。
+<ul>
+    <li>Program → インフラストラクチャのあるべき姿を定義したもの</li>
+    <li>Resource → インフラストラクチャを構成するオブジェクト(実際のインフラリソース)。オブジェクトのプロパティ(設定値)は他のオブジェクトに共有することが可能(図のInputs/Outputsの部分)</li>
+    <li>Project → Programのソースコードとメタデータ(どのようにProgramを動かすかの情報)を格納するディレクトリ</li>
+    <li>Stack → Projectディレクトリ内でProgramを「pulumi up」(Pulumi CLI) した後のインスタンス。同一のProgramから本番環境/ステージング環境など、用途に応じて複数の環境用にインスタンスを作成が可能</li>
+</ul>
+また、公式HPの図には記載されていませんが、Projectの上位の構成として<a href="https://www.pulumi.com/docs/intro/pulumi-service/organizations/">Organization</a>を作成することもできます。Organizationは複数のProjectを1つにまとめ、Organizationに紐づいているメンバーにProjectへのアクセス権限を与えたり、Organization単位でのポリシー設定や料金管理をすることが可能です。
+</p>
+
+<h3 id="01-03">Pulumiの料金 (<a href="https://www.pulumi.com/pricing/">参考</a>)</h3>
+
+<p><i>2022年8月25日現在</i></p>
+
+<p>Pulumiはオープンソースとなり個人利用する分には料金は掛かりません。また15人までの複数人利用プラン(Teamプラン)では150kクレジットまで毎月無料で利用できます。15人を超える複数人利用や、企業単位で利用する場合には以下の有償プランが用意されています。料金やプラン内容について今後変動する可能性もあるので、実際に利用される際は公式HPをご確認ください。</p>
+
+<table style="width: 100%" class="table-fixed">
+<tr style="background-color: #F7F7F7">
+    <th style="text-align: center;font-weight: bold">Individual</th>
+    <th style="text-align: center;font-weight: bold">Team</th>
+    <th style="text-align: center;font-weight: bold">Enterprise</th>
+    <th style="text-align: center;font-weight: bold">BusinessCritical</th>
+</tr>
+<tr>
+    <td style="text-align: center">無料</td>
+    <td style="text-align: center">$0.00025/クレジット<br><span style="color: red">150Kクレジット/月まで無料</span><br><span style="color: red">(毎月200リソース程度)</span></td>
+    <td style="text-align: center"><a href="https://www.pulumi.com/contact/?form=sales">要問い合わせ</a></td>
+    <td style="text-align: center"><a href="https://www.pulumi.com/contact/?form=sales">要問い合わせ</a></td>
+</tr>
+<tr style="vertical-align: top">
+<td>
+<ul>
+    <li>全ての言語/全てのクラウドで利用可能</li>
+    <li>1メンバーまで(個人利用)</li>
+    <li>state/secret管理</li>
+    <li>無制限のデプロイ</li>
+</ul>
+</td>
+<td>
+Individualプランに以下追加
+<ul>
+    <li>15メンバーまで</li>
+    <li>無制限stack</li>
+    <li>同時アップデート(5アップデート)</li>
+    <li>CI/CDアシスタント</li>
+    <li>webhook</li>
+</ul>
+</td>
+<td>
+Teamプランに以下追加
+<ul>
+    <li>無制限メンバー/チーム</li>
+    <li>RBAC(Role-based access control)利用</li>
+    <li>SAML/SSO</li>
+    <li>コミット割引</li>
+    <li>サポートサービス (12 x 5)</li>
+</ul>
+</td>
+<td>
+<ul>
+Enterpriseに以下追加
+    <li>組織ポリシー機能</li>
+    <li><a href="https://www.pulumi.com/product/self-hosted/">セルフホスティング利用</a></li>
+    <li>自動グループおよびユーザー同期（SCIM）</li>
+    <li>エクスポート可能な監査ログ</li>
+    <li>サポートサービス (24 x 7)</li>
+    <li>プライベートSlackチャンネル</li>
+    <li>トレーニング、オンボーディング、ワークショップ</li>
+    <li>プロフェッショナルサービス</li>
+</ul>
+</td>
+</tr>
+</table>
+
+<p style="margin-bottom: 40px">※ 1 クレジット → Pulumi Programに定義された 1 つのリソースを 1 時間利用した時の 1 単位</p>
+
+<h2 id="02">実際に触ってみた</h2>
+
+<h3 id="02-01">前提</h3>
+
+<p>今回はローカル開発環境(macOS)を利用してGoでGCPリソース(CloudStorageBucket)のデプロイを実施したいと思います。デプロイ後はhtmlファイルのbucketへの配置もPulumiで実施して、簡易な静的Webサーバーの動作確認を行います。基本的にデプロイ手順は<a href="https://www.pulumi.com/docs/get-started/gcp/">公式HP</a>に記載の手順に沿って実施します。</p>
+
+<ul>
+    <li>macOS v11.6.4</li>
+    <li>go1.18.3 darwin/amd64</li>
+    <li>Pulumi v3.35.3</li>
+</ul>
+
+<h3 id="02-02">前準備 (<a href="https://www.pulumi.com/docs/get-started/gcp/begin/">参考</a>)</h3>
+
+<ul>
+<li>PulumiをmacOSにインストール</li>
+[cc]
+brew install pulumi/tap/pulumi
+[/cc]
+<li>GoをmacOSにインストール (<a href="https://go.dev/doc/install">参考: Go公式HP</a>)
+<ul><li>Go公式HPに記載の手順に従ってインストール実施しました</li></ul>
+</li>
+<li>GCP projectの新規作成
+<ul><li>GCPコンソールにログイン後、今回は新しく「pulumi-test」projectを作成しました</li>
+<img src="https://www.creationline.com/wp-content/uploads/2022/08/2_new_pulumi-creategcpproject-1-360x320.png" alt="" width="360" height="320" class="aligncenter size-medium wp-image-55262" />
+</ul>
+</li>
+<li>PulumiのGoogleCloudAccountアクセス設定
+    <ul>
+        <li>ローカル環境での開発となるので<a href="https://cloud.google.com/sdk/docs/install">GoogleCloudSDK</a>をmacOSのターミナルにをあらかじめインストールしておきます
+        <li>GCPリソースの作成はPulumiが利用するGCPのServiceAccountと、適切なIAM設定が必要になります。今回はServiceAccount(pulumi-test-sa)に、GCS Bucket作成で必要なrole(roles/storage.admin)を付与しました。
+[cc]
+$ gcloud iam service-accounts create pulumi-test-sa
+Created service account [pulumi-test-sa].
+$ gcloud projects add-iam-policy-binding pulumi-test --member='pulumi-test-sa@pulumi-test-364012.iam.gserviceaccount.com' --role='roles/storage.admin'
+Updated IAM policy for project [pulumi-test].
+bindings:
+〜
+- members:
+- serviceAccount:pulumi-test-sa@pulumi-test-364012.iam.gserviceaccount.com
+role: roles/storage.admin
+〜
+[/cc]
+        <li>gcloudのdefault application credentialsを設定します
+[cc]
+$ gcloud auth application-default login
+---
+-&gt; CLIに表示されたリンクをクリックしてログイン
+[/cc]
+    </ul>
+</li>
+</ul>
+
+<h3 id="02-03">手順 (<a href="https://www.pulumi.com/docs/get-started/gcp/">参考</a>)</h3>
+
+<h3 id="02-03-01">Pulumi Project 新規作成</h3>
+
+<ul>
+<li>pulumiプロジェクト用のディレクトリを作成します。</li>
+[cc]
+$ mkdir quickstart &amp;&amp; cd quickstart
+[/cc]
+<li>まずはpulumiアカウント新規作成のため、「pulumi new &lt;テンプレート名&gt;」コマンドを実行します。「log in using your browser」で「Enter」を叩くと、Pulumiのログイン画面がブラウザで表示されます。</li>
+[cc]
+$ pulumi new gcp-go
+Manage your Pulumi stacks by logging in.
+Run `pulumi login --help` for alternative login options.
+Enter your access token from https://app.pulumi.com/account/tokens
+    or hit to log in using your browser :
+[/cc]
+<img src="/wp-content/uploads/2022/08/3_pulumi-login-279x360.png" alt="3_pulumi-login" width="279" height="360" class="aligncenter size-medium wp-image-53965" style="margin-top: 10px" />
+<li>Pulumiのアカウントは今回新規に作成します。 ログイン画面下部の「Create an account」をクリックします。</li>
+<img src="/wp-content/uploads/2022/08/4_pulumi-createanaccount-360x157.png" alt="4_pulumi-createanaccount" width="360" height="157" class="aligncenter size-medium wp-image-53966" style="margin-top: 10px" />
+<li>「Create an Account」の箇所でアカウント作成に用いるサービスを選択します。今回は「Email」を選択しました。</li>
+<img src="/wp-content/uploads/2022/08/5_pulumi-choseemail-360x251.png" alt="5_pulumi-choseemail" width="360" height="251" class="aligncenter size-medium wp-image-53967" style="margin-top: 10px" />
+<li>アカウントの情報(Full Name/Username/Email/Password)を入力して、「Sign up」をクリックします。</li>
+<img src="/wp-content/uploads/2022/08/6_pulumi-filedinfo-360x324.png" alt="6_pulumi-filedinfo" width="360" height="324" class="aligncenter size-medium wp-image-53968" style="margin-top: 10px" />
+<li>アカウント登録が完了するとPulumiのダッシュボード画面に遷移します</li>
+<img src="/wp-content/uploads/2022/08/7_pulumi-dashboard-360x348.png" alt="7_pulumi-dashboard" width="360" height="348" class="aligncenter size-medium wp-image-53969" style="margin-top: 10px" />
+<li>アカウント登録したメールアドレス宛にPulumiのメールアドレス承認メールが送信されます。「Verify Email」をクリックしてメールアドレスを承認します。「Verify Email」をクリックした際も同じく、Pulumiのダッシュボードに遷移されます。</li>
+<img src="/wp-content/uploads/2022/08/8_pulumi-verifyemail-360x319.png" alt="8_pulumi-verifyemail" width="360" height="319" class="aligncenter size-medium wp-image-53970" style="margin-top: 10px" />
+<li>Pulumiアカウント登録は済んだので、ここで再度「pulumi new &lt;テンプレート名&gt;」を実行します。先ほど実行した際のプロセスは「kill (Ctrl+C)」などで一度抜けてもらい、再度「pulumi new &lt;テンプレート名&gt;」実行後、「Enter」をクリックします。</li>
+[cc]
+$ pulumi new gcp-go
+
+Manage your Pulumi stacks by logging in.
+Run `pulumi login --help` for alternative login options.
+Enter your access token from https://app.pulumi.com/account/tokens
+ or hit to log in using your browser
+[/cc]
+※ちなみに、<a href="https://www.pulumi.com/docs/reference/cli/pulumi_new/">pulumi new</a>コマンドはProjectとStackをあらかじめ用意されたテンプレートから作成するコマンドになりますが、テンプレート名が分からない場合は引数を指定せず「pulumi new」コマンドを実行すると、以下のようにテンプレート一覧が表示されるので、この中から目的のテンプレートを選択することが可能です。
+[cc]
+$ pulumi new
+[Use arrows to move, enter to select, type to filter]
+〜〜(略)〜〜
+gcp-csharp                         A minimal Google Cloud C# Pulumi program
+gcp-fsharp                         A minimal GCP F# Pulumi program
+> gcp-go                             A minimal Google Cloud Go Pulumi program
+gcp-java                           A minimal Google Cloud Java Pulumi program
+gcp-javascript                     A minimal Google Cloud JavaScript Pulumi program
+gcp-python                         A minimal Google Cloud Python Pulumi program
+gcp-typescript                     A minimal Google Cloud TypeScript Pulumi program
+gcp-visualbasic                    A minimal GCP VB.NET Pulumi program
+gcp-yaml                           A minimal Google Cloud Pulumi YAML program
+〜〜(略)〜〜
+[/cc]
+<li>「Enter」をクリックすると「Welcome to Pulumi!」のメッセージがCLIに表示され、同時にブラウザでPulumiの以下「You're logged in!」が表示されます。</li>
+<img src="/wp-content/uploads/2022/08/9_pulumi-youreloggedin-360x165.png" alt="9_pulumi-youreloggedin" width="360" height="165" class="aligncenter size-medium wp-image-53971" style="margin-top: 10px" />
+<li>CLI側でproject name/project説明文/stack nameの入力を促されますので、新しく設定値を入力するか、空欄のまま「Enter」をクリックしてdefault値(プロンプトかっこの箇所)を設定します。今回は全てdefault値にしました。</li>
+[cc]
+Waiting for login to complete...
+
+
+Welcome to Pulumi!
+
+Pulumi helps you create, deploy, and manage infrastructure on any cloud using
+your favorite language. You can get started today with Pulumi at:
+
+https://www.pulumi.com/docs/get-started/
+
+Tip of the day: Resources you create with Pulumi are given unique names (a randomly
+generated suffix) by default. To learn more about auto-naming or customizing resource
+names see https://www.pulumi.com/docs/intro/concepts/resources/#autonaming.
+
+
+This command will walk you through creating a new Pulumi project.
+
+Enter a value or leave blank to accept the (default), and press .
+Press ^C at any time to quit.
+
+project name: (quickstart)
+project description: (A minimal Google Cloud Go Pulumi program)
+Created project 'quickstart'
+
+Please enter your desired stack name.
+To create a stack in an organization, use the format / (e.g. `acmecorp/dev`).
+stack name: (dev)
+Created stack 'dev'
+[/cc]
+<li>次にインフラリソースデプロイ先のGCPのProject名を入力します。入力完了して「Enter」をクリックすると、Goのdependenciesが自動インストールされて、PulumiのProject作成が完了します。</li>
+[cc]
+gcp:project: The Google Cloud project to deploy into: pulumi-test
+Saved config
+
+Installing dependencies...
+
+go: downloading github.com/pulumi/pulumi-gcp/sdk/v6 v6.26.0
+go: downloading github.com/pulumi/pulumi/sdk/v3 v3.34.1
+go: downloading github.com/blang/semver v3.5.1+incompatible
+go: downloading golang.org/x/net v0.0.0-20201021035429-f5854403a974
+〜〜(略)〜〜
+go: downloading github.com/anmitsu/go-shlex v0.0.0-20161002113705-648efa622239
+go: downloading github.com/kr/text v0.2.0
+go: downloading github.com/alcortesm/tgz v0.0.0-20161220082320-9c5fe88206d7
+Finished installing dependencies
+
+Your new project is ready to go! &#x2728;
+
+To perform an initial deployment, run 'pulumi up'
+[/cc]
+<li>ちなみに、Pulumi Project作成が完了するとPulumiのGUI画面の「Projects」タブから、今回作成されたProjectが確認できます。今回CLIで実施したPulumi Projectsの作成や、その他Organizationの作成、Pulumiの諸々の設定などはGUI画面からも実施することが可能です。</li>
+<img src="/wp-content/uploads/2022/08/10_pulumi-createprojectwithconsole-360x221.png" alt="10_pulumi-createprojectwithconsole" width="360" height="221" class="aligncenter size-medium wp-image-53972" style="margin-top: 10px" />
+</ul>
+
+<h3 id="02-03-02">Program 新規作成</h3>
+
+<ul>
+<li>先ほど新しくPulumi Projectを作成した際に生成されたファイルは以下の通りとなります
+    <ul>
+    <li>Pulumi.yaml → Pulumi Projectの定義ファイル</li>
+    <li>Pulumi.dev.yaml → stackの設定ファイル</li>
+    <li>main.go → stack resourceを定義するPulumi Program</li>
+    </ul>
+</li>
+<li>「main.go」に以下コードを記載して、実際のstack resource (storage bucket)を定義します。作成したstorage bucketのbucket nameを出力させます。</li>
+[cc]
+package main
+
+import (
+    "github.com/pulumi/pulumi-gcp/sdk/v6/go/gcp/storage"
+    "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+)
+
+func main() {
+    pulumi.Run(func(ctx *pulumi.Context) error {
+        // Create a GCP resource (Storage Bucket)
+    bucket, err := storage.NewBucket(ctx, "my-bucket", &amp;storage.BucketArgs{
+        Location: pulumi.String("US"),
+    })
+    if err != nil {
+        return err
+    }
+
+        // Export the DNS name of the bucket
+    ctx.Export("bucketName", bucket.Url)
+        return nil
+    })
+}
+[/cc]
+</ul>
+
+<h3 id="02-03-03">Stack デプロイ</h3>
+
+<ul>
+<li>Programの準備が整ったらStack(dev)を実際にデプロイします。</li>
+[cc]
+$ pulumi up
+[/cc]
+<li>アップデート(Stackデプロイ)を実行するか確認のプロンプトが表示されるので、矢印を「yes」に合わせて「Enter」をクリックします。ちなみにここで「details」を選択すると、アップデート前後のdiffを確認できます。</li>
+[cc]
+Previewing update (dev)
+
+View Live: https://app.pulumi.com/CL_Kenneth/quickstart/dev/previews/bdc6be2e-****-****-****-******
+
+[resource plugin gcp-6.26.0] installing
+Downloading plugin: 40.40 MiB / 40.40 MiB [=========================] 100.00% 4s
+    Type                  Name           Plan
++   pulumi:pulumi:Stack   quickstart-dev create
++   └─ gcp:storage:Bucket my-bucket      create
+
+Resources:
+    + 2 to create
+
+Do you want to perform this update? [Use arrows to move, enter to select, type to filter]
+&gt; yes
+  no
+  details
+[/cc]
+<li>デプロイが完了すると以下のように作成されたリソースの数(Stack,Bucketの2つ)やデプロイ時間、Stackのアウトプット(今回はbucketName)が表示されます。</li>
+[cc]
+Do you want to perform this update? yes
+Updating (dev)
+
+View Live: https://app.pulumi.com/CL_Kenneth/quickstart/dev/updates/1
+
+    Type                  Name           Status
++   pulumi:pulumi:Stack   quickstart-dev created
++   └─ gcp:storage:Bucket my-bucket      created
+
+Outputs:
+bucketName: "gs://my-bucket-198eadd"
+
+Resources:
+    + 2 created
+
+Duration: 6s
+[/cc]
+<li>実際にGCPコンソールからもStorageBucketが作成されていることが確認できます。</li>
+<img src="https://www.creationline.com/wp-content/uploads/2022/08/11_new_pulumi-gcsbucletcreated-1024x242.png" alt="" width="1024" height="242" class="aligncenter size-large wp-image-55261" />
+<li><a href="https://www.pulumi.com/docs/intro/concepts/stack/#outputs">Stackアウトプット</a>ではProgramで他のStackに共有したいvalueをアウトプットとして出力できます。以下のコマンドでStackアウトプットを確認できます。</li>
+[cc]
+$ pulumi stack output bucketName
+gs://(bucket dns name)
+[/cc]
+  またはPulumi GUIからも確認できます。
+<img src="/wp-content/uploads/2022/08/12_pulumi-checkedstack-360x292.png" alt="12_pulumi-checkedstack" width="360" height="292" class="aligncenter size-medium wp-image-53974" style="margin-top: 10px" />
+</ul>
+
+<h3 id="02-03-04">Program 編集</h3>
+
+<ul>
+<li>Storage BucketがPulumiを用いてデプロイ出来たので、今度はhtmlファイルをPulumiでBucketに格納します。</li>
+<li>Pulumi Project directory(quickstart)内で簡単なhtmlファイルを作成します。</li>
+[cc]
+cat &lt;&lt;EOT &gt; index.html
+&lt;html&gt;
+    &lt;body&gt;
+        &lt;h2&gt;Hello, Pulumi!&lt;/h2&gt;
+    &lt;/body&gt;
+&lt;/html&gt;
+EOT
+[/cc]
+<li>「main.go」Programを編集して、以下 bucketObjectとbucketEndpoint resourceを追記します。BucketObjectArgsのBucket名指定では、前回に作成したbucket.Name変数を指定しています。</li>
+[cc]
+bucketObject, err := storage.NewBucketObject(ctx, "index.html", &amp;storage.BucketObjectArgs{
+    Bucket: bucket.Name,
+    Source: pulumi.NewFileAsset("index.html"),
+})
+bucketEndpoint := pulumi.Sprintf("http://storage.googleapis.com/%s/%s", bucket.Name, bucketObject.Name)
+if err != nil {
+    return err
+}
+[/cc]
+</ul>
+
+<h3 id="02-03-05">Program 変更 デプロイ</h3>
+
+<ul>
+<li>「main.go」Programを編集後は、StorageBucket新規作成時と同様に「pulumi up」を実施後、「yes」を選択します。
+[cc]
+$ pulumi up
+---
+Previewing update (dev)
+
+View Live: https://app.pulumi.com/CL_Kenneth/quickstart/dev/previews/a16a6685-****-****-****-******
+
+    Type Name Plan
+    pulumi:pulumi:Stack quickstart-dev
++   └─ gcp:storage:BucketObject index.html create
+
+Resources:
+  + 1 to create
+    2 unchanged
+
+Do you want to perform this update? [Use arrows to move, enter to select, type to filter]
+&gt; yes
+  no
+  details
+[/cc]
+<ul>
+<li>「pulumi up」時に「bucketEndpoint declared but not used」errorが出た場合は、一旦以下 bucketEndpoint変数をアンダースコア変数に格納します。</li>
+[cc]
+_ = bucketEndpoint
+[/cc]
+</ul>
+</li>
+<li>Programの変更分がデプロイ完了した際は以下のように、今回作成したobject(index.html)と 「1 created」が確認できます。</li>
+[cc]
+Do you want to perform this update? yes
+Updating (dev)
+
+View Live: https://app.pulumi.com/CL_Kenneth/quickstart/dev/updates/2
+
+    Type Name Status
+    pulumi:pulumi:Stack quickstart-dev
+  + └─ gcp:storage:BucketObject index.html created
+
+Outputs:
+    bucketName: "gs://my-bucket-198eadd"
+
+Resources:
+  + 1 created
+    2 unchanged
+
+Duration: 3s
+[/cc]
+<li>object作成後はPulumiのstack output出力コマンドを用いて、以下「gsutil ls」コマンドで作成されたobjectを確認します。</li>
+[cc]
+$ gsutil ls $(pulumi stack output bucketName)
+---
+gs://my-bucket-****/index.html-****
+[/cc]
+<li>object作成後は、Storage bucketが静的webサーバーとして機能するようにProgramを編集します。「main.go」のbucketに「Website」propertyと、Google Cloud Storage利用時の推奨に基づき「uniform bucket-level acces: ture」をセットします。</li>
+[cc]
+bucket, err := storage.NewBucket(ctx, "my-bucket", &amp;storage.BucketArgs{
+    Location: pulumi.String("US"),
+    Website: storage.BucketWebsiteArgs{
+        MainPageSuffix: pulumi.String("index.html"),
+    },
+    UniformBucketLevelAccess: pulumi.Bool(true),
+})
+[/cc]
+<li>次にインターネット経由で匿名のユーザーが該当htmlファイルを閲覧できるように権限設定をProgramに追記します。</li>
+[cc]
+_, err = storage.NewBucketIAMBinding(ctx, "my-bucket-IAMBinding", &amp;storage.BucketIAMBindingArgs{
+    Bucket: bucket.Name,
+    Role: pulumi.String("roles/storage.objectViewer"),
+    Members: pulumi.StringArray{
+        pulumi.String("allUsers"),
+    },
+})
+if err != nil {
+    return err
+}
+[/cc]
+<li>またBucketObjectにHTMLとしてサーブできるようにContentType propertyを追記します。</li>
+[cc]
+bucketObject, err := storage.NewBucketObject(ctx, "index.html", &amp;storage.BucketObjectArgs{
+    Bucket: bucket.Name,
+    ContentType: pulumi.String("text/html"),
+    Source: pulumi.NewFileAsset("index.html"),
+})
+[/cc]
+<li>最後にアクセス先のエンドポイントURLをStackアウトプット設定をProgramに追記します。</li>
+※一時的に「bucketEndpoint」変数にアンダースコア変数を用いている場合はこのタイミングで削除します
+[cc]
+ctx.Export("bucketEndpoint", bucketEndpoint)
+[/cc]
+<li>Programの準備が整ったので、ここで「pulumi up」を実行します。「pulumi up」時のdetailは以下のようなdiffが確認できました。</li>
+[cc]
+$ pulumi up
+Previewing update (dev)
+
+View Live: https://app.pulumi.com/CL_Kenneth/quickstart/dev/previews/1bc49657-****-****-****-******
+
+    Type                             Name                 Plan      Info
+    pulumi:pulumi:Stack              quickstart-dev
+  ~ ├─ gcp:storage:Bucket            my-bucket            update    [diff: +website~uniformBucket
+  + ├─ gcp:storage:BucketIAMBinding  my-bucket-IAMBinding create
+ +- └─ gcp:storage:BucketObject      index.html           replace   [diff: ~contentType]
+
+Outputs:
++ bucketEndpoint: "http://storage.googleapis.com/my-bucket-****/index.html-****"
+
+Resources:
+    + 1 to create
+    ~ 1 to update
+    +-1 to replace
+    3 changes. 1 unchanged
+[/cc]
+detail (diff)
+[cc]
+Do you want to perform this update? details
+    pulumi:pulumi:Stack: (same)
+        [urn=urn:pulumi:dev::quickstart::pulumi:pulumi:Stack::quickstart-dev]
+        ~ gcp:storage/bucket:Bucket: (update)
+            [id=my-bucket-*****]
+            [urn=urn:pulumi:dev::quickstart::gcp:storage/bucket:Bucket::my-bucket]
+            ~ uniformBucketLevelAccess: false =&gt; true
+            + website : {
+                + mainPageSuffix: "index.html"
+            }
+        + gcp:storage/bucketIAMBinding:BucketIAMBinding: (create)
+            [urn=urn:pulumi:dev::quickstart::gcp:storage/bucketIAMBinding:BucketIAMBinding::my-bucket-IAMBinding]
+            bucket : "my-bucket-*****"
+            members : [
+                [0]: "allUsers"
+            ]
+            role : "roles/storage.objectViewer"
+        ++gcp:storage/bucketObject:BucketObject: (create-replacement)
+            [id=my-bucket-****-index.html-****]
+            [urn=urn:pulumi:dev::quickstart::gcp:storage/bucketObject:BucketObject::index.html]
+          ~ contentType: "text/html; charset=utf-8" =&gt; "text/html"
+        +-gcp:storage/bucketObject:BucketObject: (replace)
+            [id=my-bucket-****-index.html-****]
+            [urn=urn:pulumi:dev::quickstart::gcp:storage/bucketObject:BucketObject::index.html]
+          ~ contentType: "text/html; charset=utf-8" =&gt; "text/html"
+        --outputs:--
+        + bucketEndpoint: "http://storage.googleapis.com/my-bucket-*****/index.html-*****"
+        --gcp:storage/bucketObject:BucketObject: (delete-replaced)
+            [id=my-bucket-****-index.html-****]
+            [urn=urn:pulumi:dev::quickstart::gcp:storage/bucketObject:BucketObject::index.html]
+[/cc]
+<li>デプロイ後は、Pulumi stack outputコマンドを用いてhtmlファイルが取得できるか確認します。Pulumi動作検証はこれにて完了です。</li>
+[cc]
+$ curl $(pulumi stack output bucketEndpoint)
+---
+cat &lt;&lt;EOT &gt; index.html
+&lt;html&gt;
+    &lt;body&gt;
+        &lt;h2&gt;Hello, Pulumi!&lt;/h2&gt;
+    &lt;/body&gt;
+&lt;/html&gt;
+EOT
+[/cc]
+</ul>
+
+<h3 id="02-03-06">Stack resource 削除</h3>
+
+<ul>
+<li>今回の検証で作成したStackのresourceを削除します。削除前に、bucketObjectを含んだままのbucketをそのまま削除出来るように、事前に「ForceDestroy:　pulumi.Bool(true)」をProgramに追記して、「pulumi up」で一度更新します。</li>
+[cc]
+bucket, err := storage.NewBucket(ctx, "my-bucket", &amp;storage.BucketArgs{
+    Location: pulumi.String("US"),
+    Website: storage.BucketWebsiteArgs{
+        MainPageSuffix: pulumi.String("index.html"),
+    },
+    UniformBucketLevelAccess: pulumi.Bool(true),
+    ForceDestroy:             pulumi.Bool(true),
+})
+[/cc]
+[cc]
+$ pulumi up
+Previewing update (dev)
+
+View Live: https://app.pulumi.com/CL_Kenneth/quickstart2/dev/previews/********-****-****-****-***********
+
+     Type                   Name             Plan       Info
+     pulumi:pulumi:Stack    quickstart2-dev
+ ~   └─ gcp:storage:Bucket  my-bucket        update     [diff: ~forceDestroy]
+
+Resources:
+    ~ 1 to update
+    3 unchanged
+
+Do you want to perform this update?  [Use arrows to move, enter to select, type to filter]
+&gt; yes
+  no
+  details
+[/cc]
+
+<li>Stack resource 削除時は以下コマンドを実行します。</li>
+[cc]
+$ pulumi destroy
+---
+Previewing destroy (dev)
+
+View Live: https://app.pulumi.com/CL_Kenneth/quickstart/dev/previews/********-****-****-****-***********
+
+    Type                            Name                 Plan
+-   pulumi:pulumi:Stack             quickstart-dev       delete
+-   ├─ gcp:storage:BucketIAMBinding my-bucket-IAMBinding delete
+-   ├─ gcp:storage:BucketObject     index.html           delete
+-   └─ gcp:storage:Bucket           my-bucket            delete
+
+Outputs:
+- bucketEndpoint: "http://storage.googleapis.com/my-bucket-198eadd/index.html-******"
+- bucketName : "gs://my-bucket-198eadd"
+
+Resources:
+    - 4 to delete
+[/cc]
+</ul>
+
+<h3 id="02-03-07">Stack 削除</h3>
+
+<ul>
+<li><a href="https://www.pulumi.com/docs/intro/concepts/stack/">Stack</a>自体に今までのstate情報(現在のresourceの状態や、どのresourceがどの時点で作成/削除されたかなどの履歴)が含まれているので、Stack自体を削除するとそれらのstate情報も削除されます。</li>
+<li>削除前に現在のStackリストを表示。</li>
+[cc]
+$ pulumi stack ls
+NAME    LAST UPDATE   RESOURCE  COUNT  URL
+dev*    21 hours ago  3                https://app.pulumi.com/CL_Kenneth/quickstart/dev
+[/cc]
+<li>stack自体を削除するコマンド実行。確認のため、削除するstack名をタイピングする必要あります。</li>
+[cc]
+$ pulumi stack rm dev
+This will permanently remove the 'dev' stack!
+Please confirm that this is what you'd like to do by typing ("dev"): dev
+Stack 'dev' has been removed!
+[/cc]
+<li>再度Stackリストを表示して、Stackが削除されていることを確認。</li>
+[cc]
+$ pulumi stack ls
+NAME    LAST UPDATE   RESOURCE  COUNT  URL
+[/cc]
+</ul>
+
+<h2 id="03" style="margin: 20px 0px 10px">まとめ</h2>
+
+<p>
+普段慣れ親しんだ言語でインフラリソースを管理できるのはとても便利だと思いました。本blogでは触れていないPulumiのその他の機能で、<a href="https://www.pulumi.com/docs/guides/continuous-delivery/">CI/CDのインテグレーション</a>や<a href="https://www.pulumi.com/docs/intro/pulumi-service/audit-logs/">監査ログ機能</a>などの便利な機能や、PulumiのGUIについて今後も深掘りしてみたいと思います。
+</p>
+
+<p></p>
