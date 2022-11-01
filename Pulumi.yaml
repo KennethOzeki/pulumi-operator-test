@@ -1,3 +1,3 @@
-name: quickstart
+name: operator-test
 description: A minimal Google Cloud Go Pulumi program
 runtime: go
