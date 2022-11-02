@@ -6,18 +6,4 @@ import (
 )
 
 func main() {
-	pulumi.Run(func(ctx *pulumi.Context) error {
-		// Create a GCP resource (Storage Bucket)
-		_, err := storage.NewBucket(ctx, "my-bucket-0927", &storage.BucketArgs{
-			Name:                     pulumi.String("my-bucket-0927"),
-			Location:                 pulumi.String("ASIA-NORTHEAST1"),
-			StorageClass:             pulumi.String("STANDARD"),
-			UniformBucketLevelAccess: pulumi.Bool(true),
-		})
-		if err != nil {
-			return err
-		}
-
-		return nil
-	})
 }
